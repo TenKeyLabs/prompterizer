@@ -31,12 +31,15 @@ package main
 type Address struct {
     Street string `prompt:"street,string,required" prompt_description:"Street name."`
     City   string `prompt:"city,string,required"`
+    Country string `prompt:"country,string" prompt_enum:"US,CA,MX,INVALID"`
 }
 
 type UserProfile struct {
     FullName    string  `prompt:"full_name,string,required" prompt_description:"User's full name."`
-    Age         int     `prompt:"age,integer"`
-    PrimaryAddr Address `prompt:"primary_address,object,required"`
+    Age         *int     `prompt:"age,integer"` // Pointer values set the schema to Nullable
+    DateOfBirth time.Time  `prompt:"dateOfBirth,string,date-time"`
+    Addresses []Address `prompt:"addresses,object,required"`
+    TemplatedDescription string `prompt:"templatedDescription,string" prompt_description:"This is a templated description with a variable: {example_detail}"`
 }
 ```
 
@@ -79,12 +82,23 @@ if err != nil {
 
 ## Struct Tag Reference
 
-- **`prompt:"<name>,<type>[,required]"`**:
+- **`prompt:"<name>,<type>[,format][,required]"`**:
   - `name`: JSON property name.
-  - `type`: `string`, `bool`, `number`, `integer`, `array`, `object`.
+  - `type`: `string`, `bool`, `number`, `integer`, `object`.
+    - For array/slice fields, specify the expected type of the array items e.g.
+    ```
+    Addresses []Address `prompt:"addresses,object`
+    Names []string `prompt:"names,string`
+    ```
+  - `format`: (Optional) Describe the expected format of the value to be returned as per [OpenApi 3.0 spec](https://spec.openapis.org/registry/format/#formats-registry) e.g. `date-time` (for ISO 8601)
+    - If `prompt_enum` is present, format `enum` is automatically set if not explicitly overridden.
+    - If type `number` is present, format `float` is automatically set if not explicitly overridden.
   - `required`: (Optional) Marks field as required.
+- **`prompt_enum:"<value1>,<value2>,..."`**: (Optional) Specify an enumeration of possible return values in a comma-separated list.
+  - Sets the format to `enum` if a format is not explicitly set.
 - **`prompt_description:"<text>"`**: (Optional) Field description. Supports `{var}` templating.
 - **`prompt_aliases:"<alias1>,<alias2>"`**: (Optional) Alternative names, added to description.
+- If field is a pointer, it's marked as Nullable
 
 ## Contributing
 

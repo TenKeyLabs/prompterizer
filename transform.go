@@ -39,14 +39,14 @@ func MarshalResponseSchema(v any, descriptionVars map[string]string) (*genai.Sch
 		return nil, errors.New("input value for schema generation cannot be nil")
 	}
 
-	return marshalType(reflect.TypeOf(v), descriptionVars)
+	return marshalType(reflect.TypeOf(v), genai.TypeObject, descriptionVars)
 }
 
-func marshalType(currentType reflect.Type, descriptionVars map[string]string) (*genai.Schema, error) {
+func marshalType(currentType reflect.Type, promptType genai.Type, descriptionVars map[string]string) (*genai.Schema, error) {
 	switch currentType.Kind() {
 	case reflect.Pointer:
 		elementType := currentType.Elem()
-		schema, err := marshalType(elementType, descriptionVars)
+		schema, err := marshalType(elementType, promptType, descriptionVars)
 		if err != nil {
 			return nil, err
 		}
@@ -54,6 +54,12 @@ func marshalType(currentType reflect.Type, descriptionVars map[string]string) (*
 		return schema, nil
 
 	case reflect.Struct:
+		if promptType != genai.TypeObject {
+			return &genai.Schema{
+				Type: promptType,
+			}, nil
+		}
+
 		schema := &genai.Schema{
 			Type:       genai.TypeObject,
 			Properties: map[string]*genai.Schema{},
@@ -67,9 +73,9 @@ func marshalType(currentType reflect.Type, descriptionVars map[string]string) (*
 
 			// Handle embedded structs
 			if field.Anonymous {
-				embeddedSchema, err := marshalType(field.Type, descriptionVars)
+				embeddedSchema, err := marshalType(field.Type, genai.TypeObject, descriptionVars)
 				if err != nil {
-					return nil, fmt.Errorf("error marshaling embedded field %s (type %s): %w", field.Name, field.Type.String(), err)
+					return nil, fmt.Errorf("error marshaling embedded field %s: %w", field.Name, err)
 				}
 
 				maps.Copy(schema.Properties, embeddedSchema.Properties)
@@ -81,33 +87,29 @@ func marshalType(currentType reflect.Type, descriptionVars map[string]string) (*
 
 			fieldParams, err := parseFieldParams(field.Tag)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse field params for %s (type %s): %w", field.Name, field.Type.String(), err)
+				return nil, fmt.Errorf("failed to parse field params for %s: %w", field.Name, err)
 			}
 			if fieldParams == nil { // No "prompt" tag, skip this field
 				continue
 			}
 
-			fieldSchema, err := marshalType(field.Type, descriptionVars)
+			fieldSchema, err := marshalType(field.Type, fieldParams.Type, descriptionVars)
 			if err != nil {
 				return nil, fmt.Errorf("error marshaling property %s (Go field %s, type %s): %w", fieldParams.Name, field.Name, field.Type.String(), err)
 			}
 
-			if !validateMarshaledFieldType(fieldSchema, fieldParams) {
-				return nil, fmt.Errorf(
-					"type mismatch for field '%s': Go type implies %s, but prompt tag specifies %s",
-					fieldParams.Name, fieldSchema.Type, fieldParams.Type,
-				)
+			if err := validateMarshaledFieldType(fieldSchema, fieldParams); err != nil {
+				return nil, err
 			}
 
 			description, err := renderDescription(fieldParams, descriptionVars)
 			if err != nil {
 				return nil, fmt.Errorf("error rendering description for %s: %w", fieldParams.Name, err)
 			}
-			fieldSchema.Description = description
 
-			if fieldParams.Format != nil {
-				fieldSchema.Format = *fieldParams.Format
-			}
+			fieldSchema.Description = description
+			fieldSchema.Format = lo.FromPtr(fieldParams.Format)
+			fieldSchema.Enum = fieldParams.Enum
 
 			schema.Properties[fieldParams.Name] = fieldSchema
 			if fieldParams.IsRequired {
@@ -123,7 +125,7 @@ func marshalType(currentType reflect.Type, descriptionVars map[string]string) (*
 	case reflect.Slice, reflect.Array:
 		elemType := currentType.Elem()
 
-		itemsSchema, err := marshalType(elemType, descriptionVars)
+		itemsSchema, err := marshalType(elemType, promptType, descriptionVars)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling array/slice items of type %s: %w", elemType.String(), err)
 		}
@@ -145,10 +147,20 @@ func marshalType(currentType reflect.Type, descriptionVars map[string]string) (*
 	}
 }
 
-func validateMarshaledFieldType(marshaledFieldSchema *genai.Schema, promptFieldParams *FieldParams) bool {
-	return marshaledFieldSchema.Type != genai.TypeUnspecified &&
-		promptFieldParams.Type != genai.TypeUnspecified &&
-		marshaledFieldSchema.Type == promptFieldParams.Type
+func validateMarshaledFieldType(marshaledFieldSchema *genai.Schema, promptFieldParams *FieldParams) error {
+	if marshaledFieldSchema.Type == genai.TypeArray {
+		return validateMarshaledFieldType(marshaledFieldSchema.Items, promptFieldParams)
+	}
+
+	if marshaledFieldSchema.Type != genai.TypeUnspecified &&
+		marshaledFieldSchema.Type == promptFieldParams.Type {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"type mismatch for field '%s': Go type implies %s, but prompt tag specifies %s",
+		promptFieldParams.Name, marshaledFieldSchema.Type, promptFieldParams.Type,
+	)
 }
 
 func parseFieldParams(tag reflect.StructTag) (*FieldParams, error) {
@@ -210,8 +222,6 @@ func toGenaiType(promptFieldType string) (genai.Type, error) {
 		return genai.TypeNumber, nil
 	case "integer":
 		return genai.TypeInteger, nil
-	case "array":
-		return genai.TypeArray, nil
 	case "object":
 		return genai.TypeObject, nil
 	default:

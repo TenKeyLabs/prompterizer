@@ -12,6 +12,8 @@ type PromptParams struct {
 	Prompt             []string
 	FileCategory       string
 	FileContent        string
+	FileData           []byte
+	FileMimeType       *string
 	ResponseStruct     any
 	TemplateVariables  map[string]string
 }
@@ -42,6 +44,9 @@ func GenerateGeminiParts(params PromptParams) (*genai.Content, []*genai.Part, *g
 		promptParts = append(promptParts, genai.NewPartFromText(fmt.Sprintf("--- %s\n\n", params.FileCategory)))
 		promptParts = append(promptParts, genai.NewPartFromText(params.FileContent))
 		promptParts = append(promptParts, genai.NewPartFromText("\n\n---\n\n"))
+	}
+	if params.FileData != nil && params.FileMimeType != nil {
+		promptParts = append(promptParts, genai.NewPartFromBytes(params.FileData, *params.FileMimeType))
 	}
 
 	for _, prompt := range params.Prompt {

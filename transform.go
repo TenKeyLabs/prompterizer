@@ -276,21 +276,17 @@ func renderEnum(fieldParams *FieldParams, variables map[string]string) ([]string
 		return fieldParams.Enum, nil
 	}
 
-	var enum []string
 	enumValue := fieldParams.Enum[0]
 
 	if matches := regexp.MustCompile(`^\{(.+)\}$`).FindStringSubmatch(enumValue); matches != nil {
 		key := matches[1]
 		if value, ok := variables[key]; ok {
-			enum = append(enum, parseCommaSeparated(value)...)
-		} else {
-			enum = append(enum, enumValue)
+			return parseCommaSeparated(value), nil
 		}
-	} else {
-		enum = append(enum, enumValue)
+		return nil, fmt.Errorf("missing variable in enum: %s", key)
 	}
 
-	return enum, nil
+	return []string{enumValue}, nil
 }
 
 func parseCommaSeparated(tag string) []string {

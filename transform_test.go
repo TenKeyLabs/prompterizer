@@ -1,11 +1,13 @@
 package prompterizer_test
 
 import (
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/tenkeylabs/prompterizer"
 	"google.golang.org/genai"
@@ -23,6 +25,20 @@ type Embedded struct {
 	EmbeddedField string `json:"embeddedField" prompt:"embeddedField,string,required"`
 }
 
+type TemplateEnum string
+
+var (
+	TemplateEnumOption1 TemplateEnum = "option1"
+	TemplateEnumOption2 TemplateEnum = "option2"
+	TemplateEnumOption3 TemplateEnum = "option3"
+
+	AllTemplateEnums = []TemplateEnum{
+		TemplateEnumOption1,
+		TemplateEnumOption2,
+		TemplateEnumOption3,
+	}
+)
+
 type TestPrompt struct {
 	unexported     string
 	Ignored        string          `json:"ignored"`
@@ -37,7 +53,7 @@ type TestPrompt struct {
 	Count          int             `json:"count" prompt:"count,integer"`
 	Status         string          `json:"status" prompt:"status,string" prompt_enum:"active,inactive,pending"`
 	StatusCode     int             `json:"statusCode" prompt:"statusCode,integer,httpStatus" prompt_enum:"200,400,500" prompt_description:"HTTP status code for the document"`
-	TemplatedEnum  string          `json:"templatedEnum" prompt:"templatedEnum,string" prompt_enum:"{dynamicEnumValues}"`
+	TemplatedEnum  TemplateEnum    `json:"templatedEnum" prompt:"templatedEnum,string" prompt_enum:"{dynamicEnumValues}"`
 	Percentage     float64         `json:"percentage" prompt:"percentage,number"`
 	Amount         decimal.Decimal `json:"amount" prompt:"amount,number"`
 	Metadata       Metadata        `json:"metadata" prompt:"metadata,object"`
@@ -68,16 +84,20 @@ type UnsupportedType struct {
 var _ = Describe("Transform", func() {
 	Describe("MarshalResponseSchema", func() {
 		var schema *genai.Schema
+		var dynamicEnumValues string
 
 		BeforeEach(func() {
 			var err error
-			schema, err = prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": "option1,option2,option3"})
+			dynamicEnumValues = strings.Join(lo.Map(AllTemplateEnums, func(item TemplateEnum, index int) string {
+				return string(item)
+			}), ",")
+			schema, err = prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
 			Expect(err).ToNot(HaveOccurred())
 		})
 
 		Context("success", func() {
 			It("should succeed with a pointer to a struct", func() {
-				schema, err := prompterizer.MarshalResponseSchema(&TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": "option1,option2,option3"})
+				schema, err := prompterizer.MarshalResponseSchema(&TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(schema).NotTo(BeNil())
 			})

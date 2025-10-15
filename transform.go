@@ -34,7 +34,7 @@ func Unmarshal[T any](responseJson string) (T, error) {
 	return *out, nil
 }
 
-func MarshalResponseSchema(v any, descriptionVars map[string]string) (*genai.Schema, error) {
+func MarshalResponseSchema(v any, templateVariables map[string]string) (*genai.Schema, error) {
 	if v == nil {
 		return nil, errors.New("input value for schema generation cannot be nil")
 	}
@@ -48,14 +48,14 @@ func MarshalResponseSchema(v any, descriptionVars map[string]string) (*genai.Sch
 		return nil, fmt.Errorf("input value for schema generation must be a struct, got %s", vType.Kind())
 	}
 
-	return marshalType(reflect.TypeOf(v), genai.TypeObject, descriptionVars)
+	return marshalType(reflect.TypeOf(v), genai.TypeObject, templateVariables)
 }
 
-func marshalType(currentType reflect.Type, promptType genai.Type, descriptionVars map[string]string) (*genai.Schema, error) {
+func marshalType(currentType reflect.Type, promptType genai.Type, templateVariables map[string]string) (*genai.Schema, error) {
 	switch currentType.Kind() {
 	case reflect.Pointer:
 		elementType := currentType.Elem()
-		schema, err := marshalType(elementType, promptType, descriptionVars)
+		schema, err := marshalType(elementType, promptType, templateVariables)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +82,7 @@ func marshalType(currentType reflect.Type, promptType genai.Type, descriptionVar
 
 			// Handle embedded structs
 			if field.Anonymous {
-				embeddedSchema, err := marshalType(field.Type, genai.TypeObject, descriptionVars)
+				embeddedSchema, err := marshalType(field.Type, genai.TypeObject, templateVariables)
 				if err != nil {
 					return nil, fmt.Errorf("error marshaling embedded field %s: %w", field.Name, err)
 				}
@@ -102,7 +102,7 @@ func marshalType(currentType reflect.Type, promptType genai.Type, descriptionVar
 				continue
 			}
 
-			fieldSchema, err := marshalType(field.Type, fieldParams.Type, descriptionVars)
+			fieldSchema, err := marshalType(field.Type, fieldParams.Type, templateVariables)
 			if err != nil {
 				return nil, fmt.Errorf("error marshaling property %s (Go field %s, type %s): %w", fieldParams.Name, field.Name, field.Type.String(), err)
 			}
@@ -111,14 +111,19 @@ func marshalType(currentType reflect.Type, promptType genai.Type, descriptionVar
 				return nil, err
 			}
 
-			description, err := renderDescription(fieldParams, descriptionVars)
+			description, err := renderDescription(fieldParams, templateVariables)
 			if err != nil {
 				return nil, fmt.Errorf("error rendering description for %s: %w", fieldParams.Name, err)
 			}
-
 			fieldSchema.Description = description
+
+			enum, err := renderEnum(fieldParams, templateVariables)
+			if err != nil {
+				return nil, fmt.Errorf("error rendering enum for %s: %w", fieldParams.Name, err)
+			}
+			fieldSchema.Enum = enum
+
 			fieldSchema.Format = lo.FromPtr(fieldParams.Format)
-			fieldSchema.Enum = fieldParams.Enum
 
 			schema.Properties[fieldParams.Name] = fieldSchema
 			if fieldParams.IsRequired {
@@ -134,7 +139,7 @@ func marshalType(currentType reflect.Type, promptType genai.Type, descriptionVar
 	case reflect.Slice, reflect.Array:
 		elemType := currentType.Elem()
 
-		itemsSchema, err := marshalType(elemType, promptType, descriptionVars)
+		itemsSchema, err := marshalType(elemType, promptType, templateVariables)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling array/slice items of type %s: %w", elemType.String(), err)
 		}
@@ -264,6 +269,28 @@ func renderDescription(fieldParams *FieldParams, variables map[string]string) (s
 		return description, fmt.Errorf("missing variables in description: %s", strings.Join(missingVariables, ", "))
 	}
 	return description, nil
+}
+
+func renderEnum(fieldParams *FieldParams, variables map[string]string) ([]string, error) {
+	if len(fieldParams.Enum) != 1 {
+		return fieldParams.Enum, nil
+	}
+
+	var enum []string
+	enumValue := fieldParams.Enum[0]
+
+	if matches := regexp.MustCompile(`^\{(.+)\}$`).FindStringSubmatch(enumValue); matches != nil {
+		key := matches[1]
+		if value, ok := variables[key]; ok {
+			enum = append(enum, parseCommaSeparated(value)...)
+		} else {
+			enum = append(enum, enumValue)
+		}
+	} else {
+		enum = append(enum, enumValue)
+	}
+
+	return enum, nil
 }
 
 func parseCommaSeparated(tag string) []string {

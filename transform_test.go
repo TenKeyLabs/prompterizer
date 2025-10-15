@@ -37,6 +37,7 @@ type TestPrompt struct {
 	Count          int             `json:"count" prompt:"count,integer"`
 	Status         string          `json:"status" prompt:"status,string" prompt_enum:"active,inactive,pending"`
 	StatusCode     int             `json:"statusCode" prompt:"statusCode,integer,httpStatus" prompt_enum:"200,400,500" prompt_description:"HTTP status code for the document"`
+	TemplatedEnum  string          `json:"templatedEnum" prompt:"templatedEnum,string" prompt_enum:"{dynamicEnumValues}"`
 	Percentage     float64         `json:"percentage" prompt:"percentage,number"`
 	Amount         decimal.Decimal `json:"amount" prompt:"amount,number"`
 	Metadata       Metadata        `json:"metadata" prompt:"metadata,object"`
@@ -171,6 +172,19 @@ var _ = Describe("Transform", func() {
 					"Type":   Equal(genai.TypeString),
 					"Format": Equal("enum"),
 					"Enum":   ConsistOf("active", "inactive", "pending"),
+				})))
+			})
+
+			It("should marshal a property with a templated enum value", func() {
+				schema, err := prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{
+					"seriesName":        "Business 101",
+					"dynamicEnumValues": "option1,option2,option3",
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema.Properties["templatedEnum"]).To(PointTo(MatchFields(IgnoreExtras, Fields{
+					"Type":   Equal(genai.TypeString),
+					"Format": Equal("enum"),
+					"Enum":   ConsistOf("option1", "option2", "option3"),
 				})))
 			})
 

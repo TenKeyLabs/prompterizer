@@ -71,13 +71,13 @@ var _ = Describe("Transform", func() {
 
 		BeforeEach(func() {
 			var err error
-			schema, err = prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101"})
+			schema, err = prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": "option1,option2,option3"})
 			Expect(err).ToNot(HaveOccurred())
 		})
 
 		Context("success", func() {
 			It("should succeed with a pointer to a struct", func() {
-				schema, err := prompterizer.MarshalResponseSchema(&TestPrompt{}, map[string]string{"seriesName": "Business 101"})
+				schema, err := prompterizer.MarshalResponseSchema(&TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": "option1,option2,option3"})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(schema).NotTo(BeNil())
 			})
@@ -176,11 +176,6 @@ var _ = Describe("Transform", func() {
 			})
 
 			It("should marshal a property with a templated enum value", func() {
-				schema, err := prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{
-					"seriesName":        "Business 101",
-					"dynamicEnumValues": "option1,option2,option3",
-				})
-				Expect(err).ToNot(HaveOccurred())
 				Expect(schema.Properties["templatedEnum"]).To(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":   Equal(genai.TypeString),
 					"Format": Equal("enum"),
@@ -331,6 +326,12 @@ var _ = Describe("Transform", func() {
 				_, err := prompterizer.MarshalResponseSchema(UnsupportedType{}, map[string]string{})
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("error marshaling property unsupportedField (Go field Field, type complex64): unsupported type kind for schema generation: complex64 (Go type: complex64)"))
+			})
+
+			It("should return an error if a template variable for an enum is missing", func() {
+				_, err := prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101"})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("missing variable in enum: dynamicEnumValues"))
 			})
 		})
 	})

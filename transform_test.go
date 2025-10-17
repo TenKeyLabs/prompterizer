@@ -267,6 +267,144 @@ var _ = Describe("Transform", func() {
 					"Type": Equal(genai.TypeString),
 				})))
 			})
+
+			It("should populate PropertyOrdering with the correct field order", func() {
+				Expect(schema.PropertyOrdering).NotTo(BeEmpty())
+				Expect(schema.PropertyOrdering).To(HaveLen(20))
+
+				// Verify fields are in the order they appear in the struct
+				// Note: In TestPrompt, Embedded is declared at the end of the struct
+				expectedOrder := []string{
+					"documentDate", // first field with prompt tag
+					"creationDate", // second field with prompt tag
+					"publishDate",  // third field with prompt tag
+					"title",        // and so on...
+					"firstName",
+					"lastName",
+					"witness",
+					"isParsed",
+					"count",
+					"status",
+					"statusCode",
+					"percentage",
+					"amount",
+					"metadata",
+					"tags",
+					"events",
+					"specialEvent",
+					"optionalEvents",
+					"tagSets",
+					"embeddedField", // from Embedded struct (declared at end)
+				}
+
+				Expect(schema.PropertyOrdering).To(Equal(expectedOrder))
+
+				// Also verify each property exists in the schema
+				for _, propName := range expectedOrder {
+					Expect(schema.Properties).To(HaveKey(propName),
+						"Property '%s' should exist in schema", propName)
+				}
+			})
+
+			It("should populate PropertyOrdering for nested objects", func() {
+				Expect(schema.Properties).To(HaveKey("metadata"))
+				metadataSchema := schema.Properties["metadata"]
+				Expect(metadataSchema.PropertyOrdering).To(Equal([]string{"location"}))
+			})
+
+			It("should populate PropertyOrdering for array item schemas when they are objects", func() {
+				Expect(schema.Properties).To(HaveKey("events"))
+				eventsSchema := schema.Properties["events"]
+				Expect(eventsSchema.Items).NotTo(BeNil())
+				Expect(eventsSchema.Items.PropertyOrdering).To(Equal([]string{"name"}))
+			})
+		})
+
+		Context("PropertyOrdering with simple struct", func() {
+			type SimpleStruct struct {
+				Zebra   string `prompt:"zebra,string"`
+				Alpha   string `prompt:"alpha,string"`
+				Bravo   string `prompt:"bravo,string"`
+				Charlie string `prompt:"charlie,string"`
+			}
+
+			It("should preserve field order even if not alphabetical", func() {
+				schema, err := prompterizer.MarshalResponseSchema(SimpleStruct{}, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema.PropertyOrdering).To(Equal([]string{"zebra", "alpha", "bravo", "charlie"}))
+			})
+		})
+
+		Context("PropertyOrdering with embedded structs", func() {
+			type Base struct {
+				BaseField1 string `prompt:"baseField1,string"`
+				BaseField2 string `prompt:"baseField2,string"`
+			}
+
+			type Extended struct {
+				Base
+				ExtField1 string `prompt:"extField1,string"`
+				ExtField2 string `prompt:"extField2,string"`
+			}
+
+			It("should place embedded struct fields first, followed by the struct's own fields", func() {
+				schema, err := prompterizer.MarshalResponseSchema(Extended{}, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema.PropertyOrdering).To(Equal([]string{
+					"baseField1",
+					"baseField2",
+					"extField1",
+					"extField2",
+				}))
+			})
+		})
+
+		Context("PropertyOrdering with multiple embedded structs", func() {
+			type EmbedOne struct {
+				One string `prompt:"one,string"`
+			}
+
+			type EmbedTwo struct {
+				Two string `prompt:"two,string"`
+			}
+
+			type Combined struct {
+				EmbedOne
+				Middle string `prompt:"middle,string"`
+				EmbedTwo
+				Last string `prompt:"last,string"`
+			}
+
+			It("should preserve the order of embedded structs as they appear", func() {
+				schema, err := prompterizer.MarshalResponseSchema(Combined{}, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema.PropertyOrdering).To(Equal([]string{
+					"one",
+					"middle",
+					"two",
+					"last",
+				}))
+			})
+		})
+
+		Context("PropertyOrdering with fields without prompt tags", func() {
+			type Mixed struct {
+				First  string `prompt:"first,string"`
+				Second string // no prompt tag
+				Third  string `prompt:"third,string"`
+				fourth string `prompt:"fourth,string"` // unexported
+				Fifth  string `prompt:"fifth,string"`
+			}
+
+			It("should only include fields with prompt tags", func() {
+				schema, err := prompterizer.MarshalResponseSchema(Mixed{}, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema.PropertyOrdering).To(Equal([]string{
+					"first",
+					"third",
+					"fifth",
+				}))
+			})
 		})
 
 		Context("errors", func() {

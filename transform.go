@@ -74,6 +74,9 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 			Properties: map[string]*genai.Schema{},
 		}
 
+		// Track property ordering as we process fields
+		var propertyOrdering []string
+
 		for i := 0; i < currentType.NumField(); i++ {
 			field := currentType.Field(i)
 			if !field.IsExported() { // Skip unexported fields
@@ -87,6 +90,10 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 					return nil, fmt.Errorf("error marshaling embedded field %s: %w", field.Name, err)
 				}
 
+				// Add embedded properties to ordering first
+				if len(embeddedSchema.PropertyOrdering) > 0 {
+					propertyOrdering = append(propertyOrdering, embeddedSchema.PropertyOrdering...)
+				}
 				maps.Copy(schema.Properties, embeddedSchema.Properties)
 				if len(embeddedSchema.Required) > 0 {
 					schema.Required = append(schema.Required, embeddedSchema.Required...)
@@ -126,6 +133,8 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 			fieldSchema.Format = lo.FromPtr(fieldParams.Format)
 
 			schema.Properties[fieldParams.Name] = fieldSchema
+			// Add property to ordering list
+			propertyOrdering = append(propertyOrdering, fieldParams.Name)
 			if fieldParams.IsRequired {
 				schema.Required = append(schema.Required, fieldParams.Name)
 			}
@@ -133,6 +142,10 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 
 		if len(schema.Required) > 0 {
 			schema.Required = lo.Uniq(schema.Required)
+		}
+		// Set property ordering to maintain the order from the struct
+		if len(propertyOrdering) > 0 {
+			schema.PropertyOrdering = propertyOrdering
 		}
 		return schema, nil
 

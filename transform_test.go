@@ -100,6 +100,14 @@ var _ = Describe("Transform", func() {
 				schema, err := prompterizer.MarshalResponseSchema(&TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(schema).NotTo(BeNil())
+				Expect(schema.Type).To(Equal(genai.TypeObject))
+			})
+
+			It("should succeed with a slice", func() {
+				schema, err := prompterizer.MarshalResponseSchema([]TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema).NotTo(BeNil())
+				Expect(schema.Type).To(Equal(genai.TypeArray))
 			})
 
 			It("should ignore unexported fields", func() {
@@ -303,19 +311,6 @@ var _ = Describe("Transform", func() {
 				_, err := prompterizer.MarshalResponseSchema(nil, map[string]string{})
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("input value for schema generation cannot be nil"))
-			})
-
-			It("should return an error if the value is not a struct", func() {
-				_, err := prompterizer.MarshalResponseSchema("not a struct", map[string]string{})
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("input value for schema generation must be a struct, got string"))
-			})
-
-			It("should return an error if the value is a pointer to a non-struct", func() {
-				invalidInput := "not a struct"
-				_, err := prompterizer.MarshalResponseSchema(&invalidInput, map[string]string{})
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("input value for schema generation must be a struct, got string"))
 			})
 
 			It("should return an error if there is an attempt to marshal without all the required template variables", func() {

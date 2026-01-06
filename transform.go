@@ -44,11 +44,18 @@ func MarshalResponseSchema(v any, templateVariables map[string]string) (*genai.S
 		vType = vType.Elem()
 	}
 
-	if vType.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("input value for schema generation must be a struct, got %s", vType.Kind())
+	if vType.Kind() != reflect.Struct && vType.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("input value for schema generation must be a struct or slice, got %s", vType.Kind())
 	}
 
-	return marshalType(reflect.TypeOf(v), genai.TypeObject, templateVariables)
+	var rootObjectType genai.Type
+	if vType.Kind() == reflect.Slice {
+		rootObjectType = genai.TypeArray
+	} else {
+		rootObjectType = genai.TypeObject
+	}
+
+	return marshalType(reflect.TypeOf(v), rootObjectType, templateVariables)
 }
 
 func marshalType(currentType reflect.Type, promptType genai.Type, templateVariables map[string]string) (*genai.Schema, error) {

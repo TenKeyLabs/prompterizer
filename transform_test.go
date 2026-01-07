@@ -103,11 +103,21 @@ var _ = Describe("Transform", func() {
 				Expect(schema.Type).To(Equal(genai.TypeObject))
 			})
 
-			It("should succeed with a slice", func() {
+			It("should succeed with a slice of objects", func() {
 				schema, err := prompterizer.MarshalResponseSchema([]TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(schema).NotTo(BeNil())
 				Expect(schema.Type).To(Equal(genai.TypeArray))
+				Expect(schema.Items.Type).To(Equal(genai.TypeObject))
+			})
+
+			It("should succeed with a slice of slices", func() {
+				schema, err := prompterizer.MarshalResponseSchema([][]TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema).NotTo(BeNil())
+				Expect(schema.Type).To(Equal(genai.TypeArray))
+				Expect(schema.Items.Type).To(Equal(genai.TypeArray))
+				Expect(schema.Items.Items.Type).To(Equal(genai.TypeObject))
 			})
 
 			It("should ignore unexported fields", func() {

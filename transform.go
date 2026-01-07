@@ -48,14 +48,7 @@ func MarshalResponseSchema(v any, templateVariables map[string]string) (*genai.S
 		return nil, fmt.Errorf("input value for schema generation must be a struct or slice, got %s", vType.Kind())
 	}
 
-	var rootObjectType genai.Type
-	if vType.Kind() == reflect.Slice {
-		rootObjectType = genai.TypeArray
-	} else {
-		rootObjectType = genai.TypeObject
-	}
-
-	return marshalType(reflect.TypeOf(v), rootObjectType, templateVariables)
+	return marshalType(vType, toGenaiObjectOrArray(vType), templateVariables)
 }
 
 func marshalType(currentType reflect.Type, promptType genai.Type, templateVariables map[string]string) (*genai.Schema, error) {
@@ -146,7 +139,7 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 	case reflect.Slice, reflect.Array:
 		elemType := currentType.Elem()
 
-		itemsSchema, err := marshalType(elemType, promptType, templateVariables)
+		itemsSchema, err := marshalType(elemType, toGenaiObjectOrArray(elemType), templateVariables)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling array/slice items of type %s: %w", elemType.String(), err)
 		}
@@ -248,6 +241,13 @@ func toGenaiType(promptFieldType string) (genai.Type, error) {
 	default:
 		return genai.TypeUnspecified, fmt.Errorf("unsupported field type %s", promptFieldType)
 	}
+}
+
+func toGenaiObjectOrArray(t reflect.Type) genai.Type {
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		return genai.TypeArray
+	}
+	return genai.TypeObject
 }
 
 func renderDescription(fieldParams *FieldParams, variables map[string]string) (string, error) {

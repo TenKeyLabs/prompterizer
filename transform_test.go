@@ -1,7 +1,6 @@
 package prompterizer_test
 
 import (
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -84,27 +83,27 @@ type UnsupportedType struct {
 var _ = Describe("Transform", func() {
 	Describe("MarshalResponseSchema", func() {
 		var schema *genai.Schema
-		var dynamicEnumValues string
+		var dynamicEnumValues []string
 
 		BeforeEach(func() {
 			var err error
-			dynamicEnumValues = strings.Join(lo.Map(AllTemplateEnums, func(item TemplateEnum, index int) string {
+			dynamicEnumValues = lo.Map(AllTemplateEnums, func(item TemplateEnum, index int) string {
 				return string(item)
-			}), ",")
-			schema, err = prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
+			})
+			schema, err = prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101"}, map[string][]string{"dynamicEnumValues": dynamicEnumValues})
 			Expect(err).ToNot(HaveOccurred())
 		})
 
 		Context("success", func() {
 			It("should succeed with a pointer to a struct", func() {
-				schema, err := prompterizer.MarshalResponseSchema(&TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
+				schema, err := prompterizer.MarshalResponseSchema(&TestPrompt{}, map[string]string{"seriesName": "Business 101"}, map[string][]string{"dynamicEnumValues": dynamicEnumValues})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(schema).NotTo(BeNil())
 				Expect(schema.Type).To(Equal(genai.TypeObject))
 			})
 
 			It("should succeed with a slice of objects", func() {
-				schema, err := prompterizer.MarshalResponseSchema([]TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
+				schema, err := prompterizer.MarshalResponseSchema([]TestPrompt{}, map[string]string{"seriesName": "Business 101"}, map[string][]string{"dynamicEnumValues": dynamicEnumValues})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(schema).NotTo(BeNil())
 				Expect(schema.Type).To(Equal(genai.TypeArray))
@@ -112,7 +111,7 @@ var _ = Describe("Transform", func() {
 			})
 
 			It("should succeed with a slice of slices", func() {
-				schema, err := prompterizer.MarshalResponseSchema([][]TestPrompt{}, map[string]string{"seriesName": "Business 101", "dynamicEnumValues": dynamicEnumValues})
+				schema, err := prompterizer.MarshalResponseSchema([][]TestPrompt{}, map[string]string{"seriesName": "Business 101"}, map[string][]string{"dynamicEnumValues": dynamicEnumValues})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(schema).NotTo(BeNil())
 				Expect(schema.Type).To(Equal(genai.TypeArray))
@@ -316,45 +315,72 @@ var _ = Describe("Transform", func() {
 			})
 		})
 
+		Context("enum variables", func() {
+			type ListedEnum struct {
+				Kind string `json:"kind" prompt:"kind,string" prompt_enum:"{kinds}"`
+			}
+
+			It("should use an enum variable's values without splitting them on commas", func() {
+				schema, err := prompterizer.MarshalResponseSchema(ListedEnum{}, nil, map[string][]string{
+					"kinds": {"Common Stock", "Partnership Interests (e.g., LP, LLC, JV interests)"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(schema.Properties["kind"]).To(PointTo(MatchFields(IgnoreExtras, Fields{
+					"Format": Equal("enum"),
+					"Enum":   Equal([]string{"Common Stock", "Partnership Interests (e.g., LP, LLC, JV interests)"}),
+				})))
+			})
+
+			It("should return an error for an empty enum variable", func() {
+				_, err := prompterizer.MarshalResponseSchema(ListedEnum{}, nil, map[string][]string{"kinds": {}})
+				Expect(err).To(MatchError(ContainSubstring("empty enum variable: kinds")))
+			})
+
+			It("should not fill an enum from a template variable", func() {
+				_, err := prompterizer.MarshalResponseSchema(ListedEnum{}, map[string]string{"kinds": "a,b"}, nil)
+				Expect(err).To(MatchError(ContainSubstring("missing variable in enum: kinds")))
+			})
+		})
+
 		Context("errors", func() {
 			It("should return an error if the value is nil", func() {
-				_, err := prompterizer.MarshalResponseSchema(nil, map[string]string{})
+				_, err := prompterizer.MarshalResponseSchema(nil, map[string]string{}, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("input value for schema generation cannot be nil"))
 			})
 
 			It("should return an error if there is an attempt to marshal without all the required template variables", func() {
-				_, err := prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{})
+				_, err := prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{}, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("missing variables in description: seriesName"))
 			})
 
 			It("should return an error when there are an incorrect number of params", func() {
-				_, err := prompterizer.MarshalResponseSchema(WrongNumberOfParams{}, map[string]string{})
+				_, err := prompterizer.MarshalResponseSchema(WrongNumberOfParams{}, map[string]string{}, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to parse field params for Field: missing either prompt property name or type"))
 			})
 
 			It("should return an error for an invalid field type", func() {
-				_, err := prompterizer.MarshalResponseSchema(InvalidType{}, map[string]string{})
+				_, err := prompterizer.MarshalResponseSchema(InvalidType{}, map[string]string{}, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unsupported field type"))
 			})
 
 			It("should return an error for a type mismatch", func() {
-				_, err := prompterizer.MarshalResponseSchema(TypeMismatch{}, map[string]string{})
+				_, err := prompterizer.MarshalResponseSchema(TypeMismatch{}, map[string]string{}, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("type mismatch for field 'mismatchedField': Go type implies STRING, but prompt tag specifies INTEGER"))
 			})
 
 			It("should return an error for an unsupported type", func() {
-				_, err := prompterizer.MarshalResponseSchema(UnsupportedType{}, map[string]string{})
+				_, err := prompterizer.MarshalResponseSchema(UnsupportedType{}, map[string]string{}, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("error marshaling property unsupportedField (Go field Field, type complex64): unsupported type kind for schema generation: complex64 (Go type: complex64)"))
 			})
 
 			It("should return an error if a template variable for an enum is missing", func() {
-				_, err := prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101"})
+				_, err := prompterizer.MarshalResponseSchema(TestPrompt{}, map[string]string{"seriesName": "Business 101"}, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("missing variable in enum: dynamicEnumValues"))
 			})

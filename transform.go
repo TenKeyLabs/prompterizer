@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	"maps"
@@ -34,7 +35,14 @@ func Unmarshal[T any](responseJson string) (T, error) {
 	return *out, nil
 }
 
-func MarshalResponseSchema(v any, templateVariables map[string]string) (*genai.Schema, error) {
+type schemaVariables struct {
+	templates map[string]string
+	enums     map[string][]string
+}
+
+// MarshalResponseSchema builds v's schema. templateVariables fill {name} placeholders in
+// prompt_description tags; enumVariables fill prompt_enum:"{name}" tags.
+func MarshalResponseSchema(v any, templateVariables map[string]string, enumVariables map[string][]string) (*genai.Schema, error) {
 	if v == nil {
 		return nil, errors.New("input value for schema generation cannot be nil")
 	}
@@ -48,14 +56,14 @@ func MarshalResponseSchema(v any, templateVariables map[string]string) (*genai.S
 		return nil, fmt.Errorf("input value for schema generation must be a struct or slice, got %s", vType.Kind())
 	}
 
-	return marshalType(vType, toGenaiObjectOrArray(vType), templateVariables)
+	return marshalType(vType, toGenaiObjectOrArray(vType), schemaVariables{templates: templateVariables, enums: enumVariables})
 }
 
-func marshalType(currentType reflect.Type, promptType genai.Type, templateVariables map[string]string) (*genai.Schema, error) {
+func marshalType(currentType reflect.Type, promptType genai.Type, variables schemaVariables) (*genai.Schema, error) {
 	switch currentType.Kind() {
 	case reflect.Pointer:
 		elementType := currentType.Elem()
-		schema, err := marshalType(elementType, promptType, templateVariables)
+		schema, err := marshalType(elementType, promptType, variables)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +90,7 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 
 			// Handle embedded structs
 			if field.Anonymous {
-				embeddedSchema, err := marshalType(field.Type, genai.TypeObject, templateVariables)
+				embeddedSchema, err := marshalType(field.Type, genai.TypeObject, variables)
 				if err != nil {
 					return nil, fmt.Errorf("error marshaling embedded field %s: %w", field.Name, err)
 				}
@@ -102,7 +110,7 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 				continue
 			}
 
-			fieldSchema, err := marshalType(field.Type, fieldParams.Type, templateVariables)
+			fieldSchema, err := marshalType(field.Type, fieldParams.Type, variables)
 			if err != nil {
 				return nil, fmt.Errorf("error marshaling property %s (Go field %s, type %s): %w", fieldParams.Name, field.Name, field.Type.String(), err)
 			}
@@ -111,13 +119,13 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 				return nil, err
 			}
 
-			description, err := renderDescription(fieldParams, templateVariables)
+			description, err := renderDescription(fieldParams, variables.templates)
 			if err != nil {
 				return nil, fmt.Errorf("error rendering description for %s: %w", fieldParams.Name, err)
 			}
 			fieldSchema.Description = description
 
-			enum, err := renderEnum(fieldParams, templateVariables)
+			enum, err := renderEnum(fieldParams, variables)
 			if err != nil {
 				return nil, fmt.Errorf("error rendering enum for %s: %w", fieldParams.Name, err)
 			}
@@ -139,7 +147,7 @@ func marshalType(currentType reflect.Type, promptType genai.Type, templateVariab
 	case reflect.Slice, reflect.Array:
 		elemType := currentType.Elem()
 
-		itemsSchema, err := marshalType(elemType, toGenaiObjectOrArray(elemType), templateVariables)
+		itemsSchema, err := marshalType(elemType, toGenaiObjectOrArray(elemType), variables)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling array/slice items of type %s: %w", elemType.String(), err)
 		}
@@ -278,7 +286,7 @@ func renderDescription(fieldParams *FieldParams, variables map[string]string) (s
 	return description, nil
 }
 
-func renderEnum(fieldParams *FieldParams, variables map[string]string) ([]string, error) {
+func renderEnum(fieldParams *FieldParams, variables schemaVariables) ([]string, error) {
 	if len(fieldParams.Enum) != 1 {
 		return fieldParams.Enum, nil
 	}
@@ -287,8 +295,11 @@ func renderEnum(fieldParams *FieldParams, variables map[string]string) ([]string
 
 	if matches := regexp.MustCompile(`^\{(.+)\}$`).FindStringSubmatch(enumValue); matches != nil {
 		key := matches[1]
-		if value, ok := variables[key]; ok {
-			return parseCommaSeparated(value), nil
+		if values, ok := variables.enums[key]; ok {
+			if len(values) == 0 {
+				return nil, fmt.Errorf("empty enum variable: %s", key)
+			}
+			return slices.Clone(values), nil
 		}
 		return nil, fmt.Errorf("missing variable in enum: %s", key)
 	}

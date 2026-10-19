@@ -96,6 +96,7 @@ if err != nil {
   - `required`: (Optional) Marks field as required.
 - **`prompt_enum:"<value1>,<value2>,..."`**: (Optional) Specify an enumeration of possible return values in a comma-separated list.
   - Sets the format to `enum` if a format is not explicitly set.
+  - `prompt_enum:"{name}"` takes its values from `EnumVariables["name"]` at generation time.
 - **`prompt_description:"<text>"`**: (Optional) Field description. Supports `{var}` templating.
 - **`prompt_aliases:"<alias1>,<alias2>"`**: (Optional) Alternative names, added to description.
 - If field is a pointer, it's marked as Nullable

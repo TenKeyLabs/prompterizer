@@ -16,6 +16,7 @@ type PromptParams struct {
 	FileMimeType       *string
 	ResponseStruct     any
 	TemplateVariables  map[string]string
+	EnumVariables      map[string][]string
 }
 
 type PromptSettings struct {
@@ -53,7 +54,7 @@ func GenerateGeminiParts(params PromptParams) (*genai.Content, []*genai.Part, *g
 		promptParts = append(promptParts, genai.NewPartFromText(prompt))
 	}
 
-	responseSchema, err := MarshalResponseSchema(params.ResponseStruct, params.TemplateVariables)
+	responseSchema, err := MarshalResponseSchema(params.ResponseStruct, params.TemplateVariables, params.EnumVariables)
 	if err != nil {
 		return nil, nil, &genai.Schema{}, err
 	}

@@ -49,6 +49,19 @@ var _ = Describe("GenerateGeminiParts", func() {
 		Expect(schema).To(Not(BeNil()))
 	})
 
+	It("should build enums from the enum variables", func() {
+		type ListedEnum struct {
+			Kind string `json:"kind" prompt:"kind,string" prompt_enum:"{kinds}"`
+		}
+		params.ResponseStruct = ListedEnum{}
+		params.EnumVariables = map[string][]string{"kinds": {"Partnership Interests (e.g., LP, LLC, JV interests)"}}
+
+		_, _, schema, err := prompterizer.GenerateGeminiParts(params)
+
+		Expect(err).To(Not(HaveOccurred()))
+		Expect(schema.Properties["kind"].Enum).To(Equal([]string{"Partnership Interests (e.g., LP, LLC, JV interests)"}))
+	})
+
 	It("should return nil system instructions when none are provided", func() {
 		params.SystemInstructions = nil
 
